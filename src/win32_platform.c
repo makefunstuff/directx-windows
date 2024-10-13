@@ -1,269 +1,171 @@
+#include <d3dcommon.h>
 #include <windows.h>
 #include <d3d11.h>
-#include <d3dcompiler.h>
+#include <stdbool.h>
 
-// DirectX objects
-ID3D11Device* device = NULL;
-ID3D11DeviceContext* deviceContext = NULL;
-IDXGISwapChain* swapChain = NULL;
-ID3D11RenderTargetView* renderTargetView = NULL;
-ID3D11Buffer* vertexBuffer = NULL;
-ID3D11InputLayout* inputLayout = NULL;
-ID3D11VertexShader* vertexShader = NULL;
-ID3D11PixelShader* pixelShader = NULL;
+#define ENGINE_NAME "dx11engine"
 
-// Window dimensions
-const int WIDTH = 800;
-const int HEIGHT = 600;
+typedef struct {
+    ID3D11Device* pd3dDevice;
+    ID3D11DeviceContext* pImmediateContext;
+    IDXGISwapChain* pSwapChain;
+    ID3D11RenderTargetView* pRenderTargetView;
+} SDX11State;
 
-void CleanupD3D() {
-    if (vertexBuffer) vertexBuffer->lpVtbl->Release(vertexBuffer);
-    if (inputLayout) inputLayout->lpVtbl->Release(inputLayout);
-    if (vertexShader) vertexShader->lpVtbl->Release(vertexShader);
-    if (pixelShader) pixelShader->lpVtbl->Release(pixelShader);
-    if (renderTargetView) renderTargetView->lpVtbl->Release(renderTargetView);
-    if (swapChain) swapChain->lpVtbl->Release(swapChain);
-    if (deviceContext) deviceContext->lpVtbl->Release(deviceContext);
-    if (device) device->lpVtbl->Release(device);
-}
+bool g_IsRunning = true;
+SDX11State g_dx11State = {0};
 
-int InitD3D(HWND hwnd) {
-    DXGI_SWAP_CHAIN_DESC scd = { 0 };
-    scd.BufferCount = 1;
-    scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    scd.OutputWindow = hwnd;
-    scd.SampleDesc.Count = 1;
-    scd.Windowed = TRUE;
-    scd.BufferDesc.Width = WIDTH;
-    scd.BufferDesc.Height = HEIGHT;
-    scd.BufferDesc.RefreshRate.Numerator = 60;
-    scd.BufferDesc.RefreshRate.Denominator = 1;
-    scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-    // Create device, device context, and swap chain
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0,
-                      D3D11_SDK_VERSION, &scd, &swapChain, &device, NULL, &deviceContext);
-    if (FAILED(hr)) {
-        MessageBox(hwnd, L"Failed to create device and swap chain", L"Error", MB_OK);
-        return 0;
-    }
-
-    // Get the back buffer and create render target view
-    ID3D11Texture2D* backBuffer = NULL;
-    hr = swapChain->lpVtbl->GetBuffer(swapChain, 0, &IID_ID3D11Texture2D, (LPVOID*)&backBuffer);
-    if (FAILED(hr)) {
-        MessageBox(hwnd, L"Failed to get back buffer", L"Error", MB_OK);
-        return 0;
-    }
-
-    hr = device->lpVtbl->CreateRenderTargetView(device, (ID3D11Resource*)backBuffer, NULL, &renderTargetView);
-    backBuffer->lpVtbl->Release(backBuffer);
-    if (FAILED(hr)) {
-        MessageBox(hwnd, L"Failed to create render target view", L"Error", MB_OK);
-        return 0;
-    }
-
-    // Set the render target and viewport
-    deviceContext->lpVtbl->OMSetRenderTargets(deviceContext, 1, &renderTargetView, NULL);
-
-    D3D11_VIEWPORT viewport = { 0 };
-    viewport.Width = (float)WIDTH;
-    viewport.Height = (float)HEIGHT;
-    viewport.MinDepth = 0.0f;
-    viewport.MaxDepth = 1.0f;
-    deviceContext->lpVtbl->RSSetViewports(deviceContext, 1, &viewport);
-
-    return 1;
-}
-
-struct Vertex {
-    float position[3];
-    float color[4];
-};
-
-int InitTriangle() {
-    struct Vertex vertices[] = {
-        { { 0.0f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-        { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-        { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
-    };
-
-    D3D11_BUFFER_DESC bufferDesc = { 0 };
-    bufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    bufferDesc.ByteWidth = sizeof(vertices);
-    bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-
-    D3D11_SUBRESOURCE_DATA initData = { 0 };
-    initData.pSysMem = vertices;
-
-    if (FAILED(device->lpVtbl->CreateBuffer(device, &bufferDesc, &initData, &vertexBuffer))) {
-        MessageBox(NULL, L"Failed to create vertex buffer", L"Error", MB_OK);
-        return 0;
-    }
-
-    return 1;
-}
-
-const char* vertexShaderSource = 
-    "struct VS_INPUT { float4 Pos : POSITION; float4 Color : COLOR; };"
-    "struct PS_INPUT { float4 Pos : SV_POSITION; float4 Color : COLOR; };"
-    "PS_INPUT VSMain(VS_INPUT input) {"
-    "    PS_INPUT output;"
-    "    output.Pos = input.Pos;"
-    "    output.Color = input.Color;"
-    "    return output;"
-    "}";
-
-const char* pixelShaderSource = 
-    "struct PS_INPUT { float4 Pos : SV_POSITION; float4 Color : COLOR; };"
-    "float4 PSMain(PS_INPUT input) : SV_TARGET {"
-    "    return input.Color;"
-    "};";
-
-int InitShaders() {
-    ID3DBlob* vsBlob = NULL;
-    ID3DBlob* psBlob = NULL;
-    ID3DBlob* errorBlob = NULL;
-
-    // Compile vertex shader
-    HRESULT hr = D3DCompile(vertexShaderSource, strlen(vertexShaderSource), NULL, NULL, NULL, 
-                            "VSMain", "vs_5_0", 0, 0, &vsBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) {
-            MessageBoxA(NULL, (char*)errorBlob->lpVtbl->GetBufferPointer(errorBlob), "Vertex Shader Error", MB_OK);
-            errorBlob->lpVtbl->Release(errorBlob);
-        }
-        return 0;
-    }
-
-    hr = device->lpVtbl->CreateVertexShader(device, vsBlob->lpVtbl->GetBufferPointer(vsBlob),
-                                            vsBlob->lpVtbl->GetBufferSize(vsBlob), NULL, &vertexShader);
-    if (FAILED(hr)) {
-        vsBlob->lpVtbl->Release(vsBlob);
-        return 0;
-    }
-
-    // Compile pixel shader
-    hr = D3DCompile(pixelShaderSource, strlen(pixelShaderSource), NULL, NULL, NULL,
-                    "PSMain", "ps_5_0", 0, 0, &psBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) {
-            MessageBoxA(NULL, (char*)errorBlob->lpVtbl->GetBufferPointer(errorBlob), "Pixel Shader Error", MB_OK);
-            errorBlob->lpVtbl->Release(errorBlob);
-        }
-        return 0;
-    }
-
-    hr = device->lpVtbl->CreatePixelShader(device, psBlob->lpVtbl->GetBufferPointer(psBlob),
-                                           psBlob->lpVtbl->GetBufferSize(psBlob), NULL, &pixelShader);
-    if (FAILED(hr)) {
-        psBlob->lpVtbl->Release(psBlob);
-        return 0;
-    }
-
-    // Create input layout
-    D3D11_INPUT_ELEMENT_DESC layout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 }
-    };
-
-    hr = device->lpVtbl->CreateInputLayout(device, layout, 2, vsBlob->lpVtbl->GetBufferPointer(vsBlob),
-                                           vsBlob->lpVtbl->GetBufferSize(vsBlob), &inputLayout);
-    
-    vsBlob->lpVtbl->Release(vsBlob);
-    psBlob->lpVtbl->Release(psBlob);
-    
-    if (FAILED(hr)) {
-        return 0;
-    }
-
-    return 1;
-}
-
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    const wchar_t CLASS_NAME[] = L"DirectX Window Class";
+    LRESULT Result = 0;
+    
+    switch (uMsg) {
+        case WM_CLOSE:
+            g_IsRunning = false;
+            break;
+        default:
+            Result = DefWindowProc(hwnd, uMsg, wParam, lParam);
+    }
+    return Result;
+}
 
-    WNDCLASS wc = { 0 };
+HRESULT InitializeDX11(HWND hwnd)
+{
+    HRESULT hr = S_OK;
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    UINT uWidth = rc.right - rc.left;
+    UINT uHeight = rc.bottom - rc.top;
+
+    UINT createDeviceFlags = 0;
+#ifdef ENABLE_DXDEBUG
+    createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
+    DXGI_SWAP_CHAIN_DESC sd;
+    ZeroMemory(&sd, sizeof(sd));
+    sd.BufferCount = 1;
+    sd.BufferDesc.Width = uWidth;
+    sd.BufferDesc.Height = uHeight;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.RefreshRate.Numerator = 60;
+    sd.BufferDesc.RefreshRate.Denominator = 1;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow = hwnd;
+    sd.SampleDesc.Count = 1;
+    sd.SampleDesc.Quality = 0;
+    sd.Windowed = TRUE;
+
+    D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0 };
+    D3D_FEATURE_LEVEL featureLevel;
+
+    hr = D3D11CreateDeviceAndSwapChain(
+        NULL,
+        D3D_DRIVER_TYPE_HARDWARE,
+        NULL,
+        createDeviceFlags,
+        featureLevels,
+        ARRAYSIZE(featureLevels),
+        D3D11_SDK_VERSION,
+        &sd,
+        &g_dx11State.pSwapChain,
+        &g_dx11State.pd3dDevice,
+        &featureLevel,
+        &g_dx11State.pImmediateContext
+    );
+
+    // TODO(jurip) logging
+    if (FAILED(hr)) {
+        return hr;
+    }
+    
+    // Create a render target view
+    ID3D11Texture2D* pBackBuffer = NULL;
+    hr = g_dx11State.pSwapChain->lpVtbl->GetBuffer(g_dx11State.pSwapChain, 0, &IID_ID3D11Texture2D, (LPVOID*)&pBackBuffer);
+    if (FAILED(hr))
+        return hr;
+
+    hr = g_dx11State.pd3dDevice->lpVtbl->CreateRenderTargetView(g_dx11State.pd3dDevice, (ID3D11Resource*)pBackBuffer, NULL, &g_dx11State.pRenderTargetView);
+    pBackBuffer->lpVtbl->Release(pBackBuffer);
+    if (FAILED(hr))
+        return hr;
+
+    g_dx11State.pImmediateContext->lpVtbl->OMSetRenderTargets(g_dx11State.pImmediateContext, 1, &g_dx11State.pRenderTargetView, NULL);
+
+    D3D11_VIEWPORT vp;
+    vp.Width = (FLOAT)uWidth;
+    vp.Height = (FLOAT)uHeight;
+    vp.MinDepth = 0.0f;
+    vp.MaxDepth = 1.0f;
+    vp.TopLeftX = 0;
+    vp.TopLeftY = 0;
+    g_dx11State.pImmediateContext->lpVtbl->RSSetViewports(g_dx11State.pImmediateContext, 1, &vp);
+
+    return S_OK; 
+}
+
+int CALLBACK 
+WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow)
+{
+    WNDCLASS wc = {0};
+    wc.style = CS_HREDRAW|CS_VREDRAW|CS_OWNDC;
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = CLASS_NAME;
+    wc.lpszClassName = ENGINE_NAME;
+    
+    if (!RegisterClassA(&wc)) {
+        // TODO(jurip) add error handling and debug output
+        return 1;
+    }
 
-    RegisterClass(&wc);
-
-    // Calculate window size based on desired client area
-    RECT wr = { 0, 0, WIDTH, HEIGHT };
-    AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
-
-    HWND hwnd = CreateWindowEx(
+    HWND hwnd = CreateWindowExA(
         0,
-        CLASS_NAME,
-        L"DirectX Triangle",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        wr.right - wr.left, wr.bottom - wr.top,
-        NULL, NULL, hInstance, NULL
+        ENGINE_NAME,
+        ENGINE_NAME,
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,
+        NULL,
+        NULL,
+        hInstance,
+        NULL
     );
 
     if (hwnd == NULL) {
-        MessageBox(NULL, L"Window Creation Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
-        return 0;
-    }
-
-    // Initialize DirectX
-    if (!InitD3D(hwnd)) {
-        MessageBox(hwnd, L"DirectX Initialization Failed!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
-        return 0;
-    }
-
-    // Initialize triangle and shaders
-    if (!InitTriangle() || !InitShaders()) {
-        MessageBox(hwnd, L"Failed to initialize triangle or shaders!", L"Error!", MB_ICONEXCLAMATION | MB_OK);
-        CleanupD3D();
-        return 0;
+        // TODO(jurip) add error handling and debug output
+        return 1;
     }
 
     ShowWindow(hwnd, nCmdShow);
 
-    MSG msg = { 0 };
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+    HRESULT hr = InitializeDX11(hwnd);
+    if (FAILED(hr)) {
+        // TODO(jurip) add error handling and debug output
+        return 1;
     }
 
-    CleanupD3D();
-    return 0;
-}
-
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-    switch (uMsg) {
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
-
-        case WM_PAINT:
-            if (deviceContext && renderTargetView) {
-                float clearColor[4] = { 0.0f, 0.2f, 0.4f, 1.0f };
-                deviceContext->lpVtbl->ClearRenderTargetView(deviceContext, renderTargetView, clearColor);
-
-                UINT stride = sizeof(struct Vertex);
-                UINT offset = 0;
-                deviceContext->lpVtbl->IASetVertexBuffers(deviceContext, 0, 1, &vertexBuffer, &stride, &offset);
-                deviceContext->lpVtbl->IASetInputLayout(deviceContext, inputLayout);
-                deviceContext->lpVtbl->IASetPrimitiveTopology(deviceContext, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-                deviceContext->lpVtbl->VSSetShader(deviceContext, vertexShader, NULL, 0);
-                deviceContext->lpVtbl->PSSetShader(deviceContext, pixelShader, NULL, 0);
-
-                deviceContext->lpVtbl->Draw(deviceContext, 3, 0);
-
-                swapChain->lpVtbl->Present(swapChain, 0, 0);
+    while(g_IsRunning) {
+        MSG msg = {0};
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                g_IsRunning = false;
             }
-            return 0;
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+
+        // Clear the back buffer
+        float ClearColor[4] = {0.0f, 0.125f, 0.3f, 1.0f}; // RGBA
+        g_dx11State.pImmediateContext->lpVtbl->ClearRenderTargetView(g_dx11State.pImmediateContext, g_dx11State.pRenderTargetView, ClearColor);
+
+        // Present the back buffer to the screen
+        g_dx11State.pSwapChain->lpVtbl->Present(g_dx11State.pSwapChain, 0, 0);
     }
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+
+    // Cleanup
+    if (g_dx11State.pRenderTargetView) g_dx11State.pRenderTargetView->lpVtbl->Release(g_dx11State.pRenderTargetView);
+    if (g_dx11State.pSwapChain) g_dx11State.pSwapChain->lpVtbl->Release(g_dx11State.pSwapChain);
+    if (g_dx11State.pImmediateContext) g_dx11State.pImmediateContext->lpVtbl->Release(g_dx11State.pImmediateContext);
+    if (g_dx11State.pd3dDevice) g_dx11State.pd3dDevice->lpVtbl->Release(g_dx11State.pd3dDevice);
+
+    return 0;
 }
