@@ -1,3 +1,4 @@
+#include <d3dcommon.h>
 #include <windows.h>
 #include <d3d11.h>
 #include <stdbool.h>
@@ -43,7 +44,7 @@ HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szS
         &pErrorBlob
     );
 
-if (FAILED(hr)) {
+    if (FAILED(hr)) {
         if(pErrorBlob) {
             pErrorBlob->lpVtbl->Release(pErrorBlob);
         }
@@ -83,13 +84,16 @@ HRESULT InitializeTriangle(SDX11State* pState)
 
     ID3DBlob* psVSBlob = NULL;
     hr = CompileShaderFromFile(
-        "res/shaders/basic_vs.hlsl",
+        L"res/shaders/basic_vs.hlsl",
         "VSMain",
         "vs_5_0",
         &psVSBlob
     );
-   if (FAILED(hr)) {
-        MessageBoxW(NULL, L"Could not compile vertex shader.", L"Error", MB_OK);
+    if (FAILED(hr)) {
+        if(pErrorBlob) {
+            OutputDebugStringA((char*)pErrorBlob->lpVtbl->GetBufferPointer(pErrorBlob));
+            pErrorBlob->lpVtbl->Release(pErrorBlob);
+        }
         return hr;
     }
 
@@ -122,14 +126,13 @@ HRESULT InitializeTriangle(SDX11State* pState)
     );
     psVSBlob->lpVtbl->Release(psVSBlob);
     
-    
     if (FAILED(hr)) return hr;
 
     ID3DBlob* pPSBlob = NULL;
-    hr = CompileShaderFromFile("res/shaders/basic_ps.hlsl", "PS_Main", "ps_5_0", &pPSBlob);
+    hr = CompileShaderFromFile(L"res/shaders/basic_ps.hlsl", "PS_Main", "ps_5_0", &pPSBlob);
 
     if (FAILED(hr)) {
-        MessageBox(NULL, "Could not compile pixel shader", "Error", MB_OK);
+        MessageBoxW(NULL, L"Could not compile pixel shader", L"Error", MB_OK);
         return hr;
     }
 
