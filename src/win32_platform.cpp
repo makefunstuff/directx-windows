@@ -46,12 +46,12 @@ HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szS
 
     if (FAILED(hr)) {
         if(pErrorBlob) {
-            pErrorBlob->lpVtbl->Release(pErrorBlob);
+            pErrorBlob->Release();
         }
         return hr;
     }
 
-    if(pErrorBlob) pErrorBlob->lpVtbl->Release(pErrorBlob);
+    if(pErrorBlob) pErrorBlob->Release();
 
     return S_OK;
 }
@@ -74,8 +74,7 @@ HRESULT InitializeTriangle(SDX11State* pState)
     D3D11_SUBRESOURCE_DATA initData = {0};
     initData.pSysMem = vertices;
 
-    hr = pState->pd3dDevice->lpVtbl->CreateBuffer(
-        pState->pd3dDevice,
+    hr = pState->pd3dDevice->CreateBuffer(
         &bufferDesc,
         &initData,
         &pState->pVertexBuffer
@@ -90,22 +89,17 @@ HRESULT InitializeTriangle(SDX11State* pState)
         &psVSBlob
     );
     if (FAILED(hr)) {
-        if(pErrorBlob) {
-            OutputDebugStringA((char*)pErrorBlob->lpVtbl->GetBufferPointer(pErrorBlob));
-            pErrorBlob->lpVtbl->Release(pErrorBlob);
-        }
         return hr;
     }
 
-    hr = pState->pd3dDevice->lpVtbl->CreateVertexShader(
-        pState->pd3dDevice,
-        psVSBlob->lpVtbl->GetBufferPointer(psVSBlob),
-        psVSBlob->lpVtbl->GetBufferSize(psVSBlob),
+    hr = pState->pd3dDevice->CreateVertexShader(
+        psVSBlob->GetBufferPointer(),
+        psVSBlob->GetBufferSize(),
         NULL,
         &pState->pVertexShader
     );
     if (FAILED(hr)) {
-        psVSBlob->lpVtbl->Release(psVSBlob);
+        psVSBlob->Release();
         return hr;
     }
 
@@ -116,15 +110,14 @@ HRESULT InitializeTriangle(SDX11State* pState)
 
     UINT numElements = ARRAYSIZE(layout);
 
-    hr = pState->pd3dDevice->lpVtbl->CreateInputLayout(
-        pState->pd3dDevice,
+    hr = pState->pd3dDevice->CreateInputLayout(
         layout,
         numElements,
-        psVSBlob->lpVtbl->GetBufferPointer(psVSBlob),
-        psVSBlob->lpVtbl->GetBufferSize(psVSBlob),
+        psVSBlob->GetBufferPointer(),
+        psVSBlob->GetBufferSize(),
         &pState->pInputLayout
     );
-    psVSBlob->lpVtbl->Release(psVSBlob);
+    psVSBlob->Release();
     
     if (FAILED(hr)) return hr;
 
@@ -136,14 +129,13 @@ HRESULT InitializeTriangle(SDX11State* pState)
         return hr;
     }
 
-    hr = pState->pd3dDevice->lpVtbl->CreatePixelShader(
-        pState->pd3dDevice,
-        pPSBlob->lpVtbl->GetBufferPointer(pPSBlob),
-        pPSBlob->lpVtbl->GetBufferSize(pPSBlob),
+    hr = pState->pd3dDevice->CreatePixelShader(
+        pPSBlob->GetBufferPointer(),
+        pPSBlob->GetBufferSize(),
         NULL,
         &pState->pPixelShader
     );
-    pPSBlob->lpVtbl->Release(pPSBlob);
+    pPSBlob->Release();
 
     if (FAILED(hr)) return hr;
 
@@ -152,13 +144,12 @@ HRESULT InitializeTriangle(SDX11State* pState)
 
 void RenderTriangle(SDX11State* pState)
 {
-    pState->pImmediateContext->lpVtbl->IASetInputLayout(pState->pImmediateContext, pState->pInputLayout);
+    pState->pImmediateContext->IASetInputLayout(pState->pInputLayout);
 
     UINT uStride = sizeof(SVertex);
     UINT uOffset = 0;
 
-    pState->pImmediateContext->lpVtbl->IASetVertexBuffers(
-        pState->pImmediateContext,
+    pState->pImmediateContext->IASetVertexBuffers(
         0,
         1, 
         &pState->pVertexBuffer,
@@ -166,26 +157,25 @@ void RenderTriangle(SDX11State* pState)
         &uOffset
     );
 
-    pState->pImmediateContext->lpVtbl->IASetPrimitiveTopology(
-        pState->pImmediateContext,
+    pState->pImmediateContext->IASetPrimitiveTopology(
         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
     );
 
-    pState->pImmediateContext->lpVtbl->VSSetShader(pState->pImmediateContext, pState->pVertexShader, NULL, 0);
-    pState->pImmediateContext->lpVtbl->PSSetShader(pState->pImmediateContext, pState->pPixelShader, NULL, 0);
+    pState->pImmediateContext->VSSetShader(pState->pVertexShader, NULL, 0);
+    pState->pImmediateContext->PSSetShader(pState->pPixelShader, NULL, 0);
 
-    pState->pImmediateContext->lpVtbl->Draw(pState->pImmediateContext, 3, 0);
+    pState->pImmediateContext->Draw(3, 0);
 }
 
 void Render(SDX11State* pState)
 {
     float fClearColor[4] = {0.0f, 0.125f, 0.3f, 1.0f};
 
-    pState->pImmediateContext->lpVtbl->ClearRenderTargetView(pState->pImmediateContext, pState->pRenderTargetView, fClearColor);
+    pState->pImmediateContext->ClearRenderTargetView(pState->pRenderTargetView, fClearColor);
 
     RenderTriangle(pState);
 
-    pState->pSwapChain->lpVtbl->Present(pState->pSwapChain, 0, 0);
+    pState->pSwapChain->Present(0, 0);
 }
 
 
@@ -258,28 +248,25 @@ HRESULT InitializeDX11(HWND hwnd)
     
     // Create a render target view
     ID3D11Texture2D* pBackBuffer = NULL;
-    hr = g_dx11State.pSwapChain->lpVtbl->GetBuffer(
-        g_dx11State.pSwapChain, 
+    hr = g_dx11State.pSwapChain->GetBuffer(
         0, 
-        &IID_ID3D11Texture2D, 
+        __uuidof(ID3D11Texture2D), 
         (LPVOID*)&pBackBuffer
     );
 
     if (FAILED(hr))
         return hr;
 
-    hr = g_dx11State.pd3dDevice->lpVtbl->CreateRenderTargetView(
-        g_dx11State.pd3dDevice, 
+    hr = g_dx11State.pd3dDevice->CreateRenderTargetView(
         (ID3D11Resource*)pBackBuffer, 
         NULL, 
         &g_dx11State.pRenderTargetView
     );
-    pBackBuffer->lpVtbl->Release(pBackBuffer);
+    pBackBuffer->Release();
     if (FAILED(hr))
         return hr;
 
-    g_dx11State.pImmediateContext->lpVtbl->OMSetRenderTargets(
-        g_dx11State.pImmediateContext, 
+    g_dx11State.pImmediateContext->OMSetRenderTargets(
         1, 
         &g_dx11State.pRenderTargetView, 
         NULL
@@ -292,7 +279,7 @@ HRESULT InitializeDX11(HWND hwnd)
     vp.MaxDepth = 1.0f;
     vp.TopLeftX = 0;
     vp.TopLeftY = 0;
-    g_dx11State.pImmediateContext->lpVtbl->RSSetViewports(g_dx11State.pImmediateContext, 1, &vp);
+    g_dx11State.pImmediateContext->RSSetViewports(1, &vp);
 
     return S_OK; 
 }
@@ -357,14 +344,14 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdSh
 
     // Cleanup
 
-    if (g_dx11State.pVertexBuffer) g_dx11State.pVertexBuffer->lpVtbl->Release(g_dx11State.pVertexBuffer);
-    if (g_dx11State.pInputLayout) g_dx11State.pInputLayout->lpVtbl->Release(g_dx11State.pInputLayout);
-    if (g_dx11State.pVertexShader) g_dx11State.pVertexShader->lpVtbl->Release(g_dx11State.pVertexShader);
-    if (g_dx11State.pPixelShader) g_dx11State.pPixelShader->lpVtbl->Release(g_dx11State.pPixelShader);
-    if (g_dx11State.pRenderTargetView) g_dx11State.pRenderTargetView->lpVtbl->Release(g_dx11State.pRenderTargetView);
-    if (g_dx11State.pSwapChain) g_dx11State.pSwapChain->lpVtbl->Release(g_dx11State.pSwapChain);
-    if (g_dx11State.pImmediateContext) g_dx11State.pImmediateContext->lpVtbl->Release(g_dx11State.pImmediateContext);
-    if (g_dx11State.pd3dDevice) g_dx11State.pd3dDevice->lpVtbl->Release(g_dx11State.pd3dDevice);
+    if (g_dx11State.pVertexBuffer) g_dx11State.pVertexBuffer->Release();
+    if (g_dx11State.pInputLayout) g_dx11State.pInputLayout->Release();
+    if (g_dx11State.pVertexShader) g_dx11State.pVertexShader->Release();
+    if (g_dx11State.pPixelShader) g_dx11State.pPixelShader->Release();
+    if (g_dx11State.pRenderTargetView) g_dx11State.pRenderTargetView->Release();
+    if (g_dx11State.pSwapChain) g_dx11State.pSwapChain->Release();
+    if (g_dx11State.pImmediateContext) g_dx11State.pImmediateContext->Release();
+    if (g_dx11State.pd3dDevice) g_dx11State.pd3dDevice->Release();
 
     return 0;
 }
