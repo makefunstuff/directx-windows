@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <d3dcompiler.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "vendor/stb_image.h"
+
 #define ENGINE_NAME "dx11engine"
 
 typedef struct {
@@ -15,12 +18,72 @@ typedef struct {
     ID3D11InputLayout* pInputLayout;
     ID3D11VertexShader* pVertexShader;
     ID3D11PixelShader* pPixelShader;
+    ID3D11ShaderResourceView* pTextureRV;
+    ID3D11SamplerState* pSamplerLinear;
 } SDX11State;
 
 typedef struct {
-    float position[3];
+    float fposition[3];
     float color[4];
+    float texCoord[2] ;
 } SVertex;
+
+HRESULT LoadTexture(SDX11State* pState, const char* filename)
+{
+    HRESULT hr = S_OK;
+
+    int width, height, channels;
+
+    unsigned char* img = stbi_load(filename, &width, &height, &channels, STBI_rgb_alpha);
+
+    if (!img) {
+        return E_FAIL;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {0};
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels =  1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA subResource;
+    subResource.pSysMem = img;
+    subResource.SysMemPitch = width * 4;
+    subResource.SysMemSlicePitch = 0;
+
+    ID3D11Texture2D* pTexture = NULL;
+    hr = pState->pd3dDevice->CreateTexture2D(&desc, &subResource, &pTexture);
+
+    if(FAILED(hr)) {
+        stbi_image_free(img);
+        return hr;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
+    ZeroMemory(&srvDesc, sizeof(srvDesc));
+    srvDesc.Format = desc.Format;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+
+    hr = pState->pd3dDevice->CreateShaderResourceView(pTexture, &srvDesc, &pState->pTextureRV);
+
+    pTexture->Release();
+
+    stbi_image_free(img);
+
+    if(FAILED(hr)) return hr;
+    
+    return S_OK;
+}
+
+HRESULT CreateSamplerState(SDX11State* pState)
+{
+    
+}
 
 HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szShaderModel, ID3DBlob** ppBlobOut) 
 {
@@ -44,6 +107,7 @@ HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szS
         &pErrorBlob
     );
 
+
     if (FAILED(hr)) {
         if(pErrorBlob) {
             pErrorBlob->Release();
@@ -61,9 +125,9 @@ HRESULT InitializeTriangle(SDX11State* pState)
     HRESULT hr = S_OK;
 
     SVertex vertices[] = {
-        {{0.0f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}}
+        {{0.0f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.5f, 0.0f}},
+        {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
     };
 
     D3D11_BUFFER_DESC bufferDesc = {0};
@@ -326,6 +390,12 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdSh
     hr = InitializeTriangle(&g_dx11State);
     if (FAILED(hr)) {
         // TODO(jurip) add error handling and debug output
+        return 1;
+    }
+
+    hr = LoadTexture(&g_dx11State, "res/textures/wall.jpg");
+
+    if (FAILED(hr)) {
         return 1;
     }
 
