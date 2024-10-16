@@ -82,7 +82,23 @@ HRESULT LoadTexture(SDX11State* pState, const char* filename)
 
 HRESULT CreateSamplerState(SDX11State* pState)
 {
-    
+    HRESULT hr = S_OK;
+
+    D3D11_SAMPLER_DESC sd;
+    ZeroMemory(&sd, sizeof(sd));
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    sd.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+    sd.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+    sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    sd.MinLOD = 0;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+
+    hr = pState->pd3dDevice->CreateSamplerState(&sd, &pState->pSamplerLinear);
+
+    if (FAILED(hr)) return hr;
+
+    return S_OK;
 }
 
 HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szShaderModel, ID3DBlob** ppBlobOut) 
@@ -227,6 +243,9 @@ void RenderTriangle(SDX11State* pState)
 
     pState->pImmediateContext->VSSetShader(pState->pVertexShader, NULL, 0);
     pState->pImmediateContext->PSSetShader(pState->pPixelShader, NULL, 0);
+
+    pState->pImmediateContext->PSSetShaderResources(0, 1, &pState->pTextureRV);
+    pState->pImmediateContext->PSSetSamplers(0, 1, &pState->pSamplerLinear);
 
     pState->pImmediateContext->Draw(3, 0);
 }
@@ -399,6 +418,13 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdSh
         return 1;
     }
 
+    hr = CreateSamplerState(&g_dx11State);
+
+    if (FAILED(hr)) {
+        return 1;
+    }
+
+
     while(g_IsRunning) {
         MSG msg = {0};
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -413,7 +439,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdSh
     }
 
     // Cleanup
-
+    if (g_dx11State.pTextureRV) g_dx11State.pTextureRV->Release();
+    if (g_dx11State.pSamplerLinear) g_dx11State.pSamplerLinear->Release();
     if (g_dx11State.pVertexBuffer) g_dx11State.pVertexBuffer->Release();
     if (g_dx11State.pInputLayout) g_dx11State.pInputLayout->Release();
     if (g_dx11State.pVertexShader) g_dx11State.pVertexShader->Release();
