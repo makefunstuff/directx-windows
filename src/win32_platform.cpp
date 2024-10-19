@@ -51,7 +51,7 @@ WinMain(
         wc.hInstance = hInstance;
         wc.hIcon = LoadIconW(0, IDI_APPLICATION);
         wc.hCursor = LoadCursorW(0, IDC_ARROW);
-        wc.lpszClassName = L"DxSmplEngine";
+        wc.lpszClassName = L"MyWindowClass";
         wc.hIconSm = LoadIconW(0, IDI_APPLICATION);
 
         if (!RegisterClassExW(&wc)) {
@@ -149,7 +149,73 @@ WinMain(
 #endif
     IDXGISwapChain1* d3d11SwapChain;
     {
-        // TODO
+        IDXGIFactory2 *dxgiFactory;
+        {
+            IDXGIDevice1* dxgiDevice;
+            HRESULT hResult = d3d11Device->QueryInterface(__uuidof(IDXGIDevice1), (void**)&dxgiDevice);
+            assert(SUCCEEDED(hResult));
+
+            IDXGIAdapter* dxgiAdapter;
+            hResult = dxgiDevice->GetAdapter(&dxgiAdapter);
+            assert(SUCCEEDED(hResult));
+            dxgiDevice->Release();
+
+            DXGI_ADAPTER_DESC adapterDesc;
+            dxgiAdapter->GetDesc(&adapterDesc);
+
+            OutputDebugStringA("Graphics Device: ");
+            OutputDebugStringW(adapterDesc.Description);
+
+            hResult = dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&dxgiFactory);
+            assert(SUCCEEDED(hResult));
+            dxgiAdapter->Release();
+        }
+
+        DXGI_SWAP_CHAIN_DESC1 d3d11SwapChainDesc = {};
+        d3d11SwapChainDesc.Width = 0;
+        d3d11SwapChainDesc.Height = 0;
+        d3d11SwapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        d3d11SwapChainDesc.SampleDesc.Count = 1;
+        d3d11SwapChainDesc.SampleDesc.Quality = 0;
+        d3d11SwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        d3d11SwapChainDesc.BufferCount = 2;
+        d3d11SwapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+        d3d11SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+        d3d11SwapChainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+        d3d11SwapChainDesc.Flags = 0;
+
+        HRESULT hResult = dxgiFactory->CreateSwapChainForHwnd(d3d11Device, hWnd, &d3d11SwapChainDesc, 0, 0, &d3d11SwapChain);
+        assert(SUCCEEDED(hResult));
+        dxgiFactory->Release();
+    }
+
+    ID3D11RenderTargetView* d3d11FrameBufferView;
+    {
+        ID3D11Texture2D* d3d11FrameBuffer;
+        HRESULT hResult = d3d11SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&d3d11FrameBuffer);
+        assert(SUCCEEDED(hResult));
+
+        d3d11Device->CreateRenderTargetView(d3d11FrameBuffer, 0, &d3d11FrameBufferView);
+        assert(SUCCEEDED(hResult));
+        d3d11FrameBuffer->Release();
+    }
+
+    bool isRunning = true;
+    while(isRunning)
+    {
+        MSG msg = {};
+        while(PeekMessageW(&msg, 0, 0, 0, PM_REMOVE))
+        {
+            if (msg.message == WM_QUIT) {
+                isRunning = false;
+            }
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        FLOAT backgroundColor[4] = { 0.1f, 0.2f, 0.6f, 1.0f };
+        d3d11DeviceContext->ClearRenderTargetView(d3d11FrameBufferView, backgroundColor);
+        d3d11SwapChain->Present(1, 0);
     }
 }
 
