@@ -32,6 +32,7 @@ typedef struct {
 
 global SD3D11_State g_d3d11State;
 global SD3D11_ShaderState g_d3d11TriangleShaderState;
+global ID3D11Buffer g_pVertexBuffer = nullptr;
 
 HRESULT
 CompileShaderFromFile(
@@ -267,9 +268,31 @@ CreateTriangleInputLayout(SD3D11_State* pState, SD3D11_ShaderState* pShaderState
 }
 
 void
-CreateTriangleVertexBuffer()
+CreateTriangleVertexBuffer(SD3D11_State* pState, D3D11Buffer* pVertexBuffer)
 {
-  // TODO
+    FLOAT vertexData[] = {
+        0.0f, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f
+        0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f,
+        -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 1.0f
+    };
+
+    UINT stride = 6 * sizeof(float);
+    UINT uVertCount = sizeof(vertexData / stride);
+    UINT offset = 0;
+
+    D3D11_BUFFER_DESC vertexBufferDesc = {};
+    vertexBufferDesc.ByteWidth = sizeof(vertexData);
+    vertexBufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    D3D11_SUBRESOURCE_DATA vertexSubResourceData = { vertexData };
+
+    HRESULT hr = pState->pd3d11Device->CreateBuffer(
+        &vertexBufferDesc,
+        &vertexSubResourceData,
+        &pVertexBuffer
+    );
+    assert(SUCCEEDED(hr));
 }
 
 LRESULT CALLBACK
@@ -365,6 +388,7 @@ WinMain(
     }
 #endif
 
+    ID3DBlob* vsBlob;
     D3D11InitState(&g_d3d11State);
     D3D11InitSwapChain(&g_d3d11State, hWnd);
     D3D11InitFrameBuffer(&g_d3d11State);
@@ -380,11 +404,28 @@ WinMain(
             }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
+
+            if (g_bWindowDidResize)
+            {
+                g_d3d11State.pd3d11DeviceContext->OMSetRenderTargets(0, 0, 0);
+                g_d3d11State.pd3d11FrameBufferView->Release();
+
+                HRESULT hr = g_d3d11State.pd3d11SwapChain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
+                assert(SUCCEEDED(hr));
+
+                D3D11InitFrameBuffer(&g_d3d11State);
+
+                g_bWindowDidResize = false;
+            }
+
         }
 
         FLOAT backgroundColor[4] = { 0.1f, 0.2f, 0.6f, 1.0f };
         g_d3d11State.pd3d11DeviceContext->ClearRenderTargetView(g_d3d11State.pd3d11FrameBufferView, backgroundColor);
         g_d3d11State.pd3d11SwapChain->Present(1, 0);
     }
+
+    vsBlob->Release();
+    // TODO cleanup other resources (D3D11Cleanup)
 }
 
