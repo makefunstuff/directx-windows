@@ -1,9 +1,11 @@
+#include <sal.h>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #define UNICODE
 
 #include <windows.h>
 #include <d3d11_1.h>
+#include <d3dcompiler.h>
 
 #pragma comment(lib, "d3d11.lib")
 
@@ -11,7 +13,6 @@
 
 #define global static
 #define internal static
-
 
 global bool g_bWindowDidResize = false;
 
@@ -22,9 +23,21 @@ typedef struct {
     ID3D11RenderTargetView* pd3d11FrameBufferView;
 } SD3D11_State;
 
-global SD3D11_State g_d3d11State;
+typedef struct {
+    ID3D11PixelShader* ppixelShader;
+    ID3D11VertexShader* pvertexShader;
+    ID3D11InputLayout* pinputLayout;
+} SD3D11_ShaderState;
 
-HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szShaderModel, ID3DBlob** ppBlobOut)
+
+global SD3D11_State g_d3d11State;
+global SD3D11_ShaderState g_d3d11TriangleShaderState;
+
+HRESULT
+CompileShaderFromFile(
+    WCHAR* szFileName, LPCSTR szEntryPoint,
+    LPCSTR szShaderModel, ID3DBlob** ppBlobOut
+)
 {
     HRESULT hr = S_OK;
 
@@ -59,7 +72,8 @@ HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szS
     return S_OK;
 }
 
-void D3D11InitState(SD3D11_State* pd3d11State)
+void
+D3D11InitState(SD3D11_State* pd3d11State)
 {
 
     ID3D11Device* baseDevice;
@@ -105,12 +119,16 @@ void D3D11InitState(SD3D11_State* pd3d11State)
 }
 
 
-void D3D11InitSwapChain(SD3D11_State* pd3d11State, HWND hWnd)
+void
+D3D11InitSwapChain(SD3D11_State* pd3d11State, HWND hWnd)
 {
     IDXGIFactory2 *dxgiFactory;
     {
         IDXGIDevice1* dxgiDevice;
-        HRESULT hResult = pd3d11State->pd3d11Device->QueryInterface(__uuidof(IDXGIDevice1), (void**)&dxgiDevice);
+        HRESULT hResult = pd3d11State->pd3d11Device->QueryInterface(
+            __uuidof(IDXGIDevice1), (void**)&dxgiDevice
+        );
+
         assert(SUCCEEDED(hResult));
 
         IDXGIAdapter* dxgiAdapter;
@@ -124,7 +142,9 @@ void D3D11InitSwapChain(SD3D11_State* pd3d11State, HWND hWnd)
         OutputDebugStringA("Graphics Device: ");
         OutputDebugStringW(adapterDesc.Description);
 
-        hResult = dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&dxgiFactory);
+        hResult = dxgiAdapter->GetParent(
+            __uuidof(IDXGIFactory2), (void**)&dxgiFactory
+        );
         assert(SUCCEEDED(hResult));
         dxgiAdapter->Release();
     }
@@ -153,7 +173,8 @@ void D3D11InitSwapChain(SD3D11_State* pd3d11State, HWND hWnd)
     dxgiFactory->Release();
 }
 
-void D3D11InitFrameBuffer(SD3D11_State* pd3d11State)
+void
+D3D11InitFrameBuffer(SD3D11_State* pd3d11State)
 {
     ID3D11Texture2D* d3d11FrameBuffer;
     HRESULT hResult = pd3d11State->pd3d11SwapChain->GetBuffer(
@@ -170,6 +191,85 @@ void D3D11InitFrameBuffer(SD3D11_State* pd3d11State)
 
     assert(SUCCEEDED(hResult));
     d3d11FrameBuffer->Release();
+}
+
+HRESULT
+InitTriangleShaderState(
+    SD3D11_State* pState, SD3D11_ShaderState* pShaderState,
+    ID3DBlob*vsBlob
+)
+{
+    HRESULT hr = S_OK;
+
+    ID3DBlob* psBlob;
+
+    // vertex shader
+    hr = CompileShaderFromFile(
+        L"res/shaders/basic_vs.hlsl", "VSMain",
+        "vs_5_0", &vsBlob
+    );
+
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    hr = pState->pd3d11Device->CreateVertexShader(
+        vsBlob->GetBufferPointer(),
+        vsBlob->GetBufferSize(),
+        NULL,
+        &pShaderState->pvertexShader
+    );
+
+    if (FAILED(hr)) {
+        vsBlob->Release();
+        return hr;
+    }
+
+    // pixel shader
+    hr = CompileShaderFromFile(
+        L"res/shaders/basic_ps.hlsl",
+        "PS_Main", "ps_5_0", &psBlob
+    );
+
+    pState->pd3d11Device->CreatePixelShader(
+        psBlob->GetBufferPointer(),
+        psBlob->GetBufferSize(),
+        NULL, &pShaderState->ppixelShader
+    );
+
+    if (FAILED(hr)) {
+        psBlob->Release();
+        return hr;
+    }
+    psBlob->Release();
+
+    return S_OK;
+}
+
+void
+CreateTriangleInputLayout(SD3D11_State* pState, SD3D11_ShaderState* pShaderState, ID3DBlob* vsBlob)
+{
+    D3D11_INPUT_ELEMENT_DESC inputElementDesc[] =
+        {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0}
+        };
+
+    HRESULT hr = pState->pd3d11Device->CreateInputLayout(
+        inputElementDesc,
+        ARRAYSIZE(inputElementDesc),
+        vsBlob->GetBufferPointer(),
+        vsBlob->GetBufferSize(),
+        &pShaderState->pinputLayout
+    );
+
+    assert(SUCCEEDED(hr));
+}
+
+void
+CreateTriangleVertexBuffer()
+{
+  // TODO
 }
 
 LRESULT CALLBACK
