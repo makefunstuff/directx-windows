@@ -24,6 +24,41 @@ typedef struct {
 
 global SD3D11_State g_d3d11State;
 
+HRESULT CompileShaderFromFile(WCHAR* szFileName, LPCSTR szEntryPoint, LPCSTR szShaderModel, ID3DBlob** ppBlobOut)
+{
+    HRESULT hr = S_OK;
+
+    DWORD dwShaderFlags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef ENABLE_DXDEBUG
+    dwShaderFlags |= D3DCOMPILE_DEBUG;
+    dwShaderFlags |= D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+    ID3DBlob* pErrorBlob = NULL;
+    hr = D3DCompileFromFile(
+        szFileName,
+        NULL, NULL,
+        szEntryPoint,
+        szShaderModel,
+        dwShaderFlags,
+        0,
+        ppBlobOut,
+        &pErrorBlob
+    );
+
+
+    if (FAILED(hr)) {
+        if(pErrorBlob) {
+            pErrorBlob->Release();
+        }
+        return hr;
+    }
+
+    if(pErrorBlob) pErrorBlob->Release();
+
+    return S_OK;
+}
+
 void D3D11InitState(SD3D11_State* pd3d11State)
 {
 
